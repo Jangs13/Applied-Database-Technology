@@ -1,0 +1,132 @@
+// Test  - Change your File Path, preferably keep it in directories not having space in the name
+
+
+LOAD CSV WITH HEADERS FROM 
+'file:///C:/Users/ameya/Documents/HospitalGeneralInformation.csv' AS line
+WITH line
+LIMIT 1
+RETURN line
+
+
+//Indexes
+
+CREATE INDEX index_name For (n: County) ON (n.name); 
+CREATE INDEX index_name1 For (n:City) ON (n.name); 
+CREATE INDEX index_name2 For (n: ZipCode) ON (n.name); 
+CREATE INDEX index_name For  (n:Address) ON (n.name);
+
+
+//Check indexes
+SHOW INDEXES
+
+
+//Constraints
+
+CREATE CONSTRAINT FOR (h:Hospital) REQUIRE h.id IS UNIQUE;
+CREATE CONSTRAINT FOR (s:State) REQUIRE s.name IS UNIQUE;
+
+
+// Check constraints
+
+SHOW CONSTRAINTS
+
+
+// Main Load
+
+:auto LOAD CSV WITH HEADERS FROM
+'file:///C:/Users/ameya/Documents/HospitalGeneralInformation.csv' AS row
+WITH row
+WHERE row.State = 'NY'
+// state name is unique
+MERGE (state:State{name:row.State})
+// merge by pattern with their parents
+MERGE (state)<-[:IS_IN]-(county:County{name:row.County_Name})
+MERGE (county)<-[:IS_IN]-(city:City{name:row.City})
+MERGE (city)<-[:IS_IN]-(zip:ZipCode{name:row.ZIPCode})
+MERGE (zip)<-[:IS_IN]-(address:Address{name:row.Address})
+// for entities, it is best to have an id system
+MERGE (h:Hospital{id:row.Provider_ID})
+MERGE (h)-[:IS_IN]->(address)
+
+
+//Additional Information
+
+:auto LOAD CSV WITH HEADERS FROM 
+'file:///C:/Users/ameya/Documents/HospitalGeneralInformation.csv' AS row
+WITH row
+WHERE row.State = 'NY'
+MATCH (h:Hospital{id:row.Provider_ID})
+SET h.phone=row.Phone_Number,
+    h.emergency_services = row.Emergency_Services,
+    h.name= row.Hospital_Name,
+    h.mortality = row.Mortality_national_comparison,
+    h.safety = row.Safety_of_care_national_comparison,
+    h.timeliness = row.Timeliness_of_care_national_comparison,
+    h.experience = row.Patient_experience_national_comparison,
+    h.effectiveness = row.Effectiveness_of_care_national_comparison
+MERGE (type:HospitalType{name:row.Hospital_Type})
+MERGE (h)-[:HAS_TYPE]->(type)
+MERGE (ownership:Ownership{name: row.Hospital_Ownership})
+MERGE (h)-[:HAS_OWNERSHIP]->(ownership)
+MERGE (rating:Rating{name:row.Hospital_overall_rating})
+MERGE (h)-[:HAS_RATING]->(rating)
+
+
+// Geospatial Load
+
+LOAD CSV WITH HEADERS FROM 'file:///C:/Users/ameya/Documents/gpsinfo.csv' AS row
+WITH row
+MATCH (hospital:Hospital {id:row.id})
+SET hospital.latitude = toFloat(row.latitude),
+    hospital.longitude = toFloat(row.longitude)
+
+
+// schema
+
+call db.schema.visualization()
+
+
+// Check nodes
+
+MATCH (n) RETURN n LIMIT 14
+
+
+// Check nodes for City label
+
+MATCH (n:City) RETURN n LIMIT 10
+
+
+// Query 1  number of hospitals per city
+
+MATCH (h:Hospital)-[:IS_IN*3..3]->(city)
+RETURN city.name AS city, count(h) AS NumberOfHospitals
+ORDER BY NumberOfHospitals DESC LIMIT 15
+
+
+// Query 2  number of hospitals per zip
+
+MATCH (h:Hospital)-[:IS_IN*2..2]->(city)
+RETURN city.name AS zip, count(h) AS NumberOfHospitals
+ORDER BY NumberOfHospitals DESC LIMIT 15
+
+
+// Query 3  number of hospitals per street
+
+MATCH (h:Hospital)-[:IS_IN*2..2]->(city)
+RETURN city.name AS street, count(h) AS NumberOfHospitals
+ORDER BY NumberOfHospitals DESC LIMIT 15
+
+
+// Query 4 hospitals in city with below mortality average
+
+MATCH (h:Hospital)-[:IS_IN*3..3]->(City)
+WHERE h.mortality = 'Below the National average'
+RETURN City.name AS city, count(h) AS NumberOfHospitals
+ORDER BY NumberOfHospitals DESC LIMIT 15
+
+
+// Query 5 
+
+MATCH (p) WHERE p.emergency_services = 'Yes' 
+return p 
+limit 10
